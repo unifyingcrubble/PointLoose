@@ -1,5 +1,5 @@
 """
-pointloose_wifi_plus.py - phone-as-trackpad for Windows over Wi-Fi (v3: more features).
+pointloose_wifi_plus.py - PointLoose engine: phone-as-trackpad for Windows over Wi-Fi.
 
 Run on the PC:   python pointloose_wifi_plus.py
 Then open the printed URL on your phone (same Wi-Fi). No phone app needed.
@@ -40,12 +40,18 @@ from ctypes import wintypes as wt
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from pointloose_version import VERSION
+
 if sys.platform != "win32":
     sys.exit("This tool only runs on Windows.")
 
 PORT = 8765
 IDLE_TIMEOUT = 20              # seconds without any message (phone pings every 4s)
 MAX_CLIP = 20000               # characters moved through the clipboard bridge
+TOKEN_BYTES = 16               # 128-bit secret in the link
+BAD_AUTH_LIMIT = 10            # wrong links from one address within BAD_AUTH_WINDOW ...
+BAD_AUTH_WINDOW = 60           # ... seconds ...
+BAD_AUTH_BLOCK = 300           # ... block that address for this many seconds
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 user32 = ctypes.windll.user32
@@ -432,7 +438,8 @@ PAGE = r"""<!doctype html>
 <html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>PointLoose Plus</title>
+<meta name="theme-color" content="#0f1216">
+<title>PointLoose</title>
 <style>
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none}
   [hidden]{display:none!important}
@@ -445,6 +452,9 @@ PAGE = r"""<!doctype html>
   #pad{flex:1;min-height:110px;margin:8px 0;border-radius:18px;background:#1a2028;border:1px solid #2a3340;
        touch-action:none;display:flex;align-items:center;justify-content:center;color:#52606f;text-align:center;padding:12px;font-size:14px}
   #pad.laser{border-color:#e33;background:#241517;color:#a66}
+  #pad.paused{border-color:#b8860b;background:#221d10;color:#b8a060}
+  #dot.paused{background:#e0a800}
+  .about{text-align:center;font-size:12px;color:#6b7b8c;padding:8px 4px 4px}
   #tabs{display:flex;gap:4px;margin-bottom:6px}
   #tabs button{padding:9px 2px;font-size:13px;background:#1a2028;color:#8fa0b3}
   #tabs button.on{background:#2f6feb;color:#fff}
@@ -500,6 +510,7 @@ PAGE = r"""<!doctype html>
     <div class="set"><span>Tap to click</span><input id="tap" type="checkbox"></div>
     <div class="set"><span>Vibrate on actions (Android)</span><input id="haptic" type="checkbox"></div>
     <div class="set" style="font-size:12px;color:#6b7b8c">3-finger swipe: up Task view &middot; down Desktop &middot; left/right switch desktop &middot; 3-finger tap = middle click &middot; pinch = zoom</div>
+    <div class="about">PointLoose __VERSION__ &middot; No data leaves your network<br>Only control computers you own or are allowed to use.</div>
   </div>
 </div>
 <script>
@@ -513,21 +524,28 @@ document.addEventListener('click', e => { if(e.target.closest('button')) buzz();
 
 const T = new URLSearchParams(location.search).get('t') || '';
 const BASE_SCROLL = 0.14;
-let ws = null, open = false, laser = false, retry = 0, note = null;
+let ws = null, open = false, laser = false, paused = false, retry = 0, note = null;
 const q = {dx:0, dy:0, sy:0, sx:0, z:0};
 
-function setStatus(ok, text){ $('dot').className = ok ? 'ok' : ''; $('st').textContent = text; }
-function toast(t){ setStatus(open, t); clearTimeout(note); note = setTimeout(() => setStatus(open, open ? 'Connected' : 'Reconnecting...'), 1800); }
+const idleText = () => open ? (paused ? 'Paused on the PC' : 'Connected') : 'Reconnecting...';
+function setStatus(ok, text){ $('dot').className = ok ? (paused ? 'paused' : 'ok') : ''; $('st').textContent = text; }
+function toast(t){ setStatus(open, t); clearTimeout(note); note = setTimeout(() => setStatus(open, idleText()), 1800); }
+function setPaused(p){
+  if(p === paused) return;
+  paused = p; $('pad').classList.toggle('paused', paused); syncLaserUI(); setStatus(open, idleText());
+}
 
 function connect(){
   const proto = location.protocol === 'https:' ? 'wss://' : 'ws://';
   ws = new WebSocket(proto + location.host + '/ws?t=' + encodeURIComponent(T));
   ws.onopen = () => {
-    open = true; retry = 0; setStatus(true, 'Connected');
-    laser = false; syncLaserUI(); tx('L,0'); tx('lc,' + cfg.lcolor); tx('ls,' + cfg.lsize);
+    open = true; retry = 0; setStatus(true, idleText());
+    laser = false; syncLaserUI(); tx('L,0'); tx('lc,' + cfg.lcolor); tx('ls,' + cfg.lsize); tx('p');
   };
   ws.onmessage = e => {
-    if(typeof e.data === 'string' && e.data.startsWith('c,')){ $('txt').value = e.data.slice(2); toast('PC clipboard received'); }
+    if(typeof e.data !== 'string') return;
+    if(e.data.startsWith('c,')){ $('txt').value = e.data.slice(2); toast('PC clipboard received'); }
+    else if(e.data.startsWith('P,')) setPaused(e.data === 'P,1');
   };
   ws.onclose = () => {
     open = false; q.dx = q.dy = q.sy = q.sx = q.z = 0; setStatus(false, 'Reconnecting...');
@@ -631,7 +649,9 @@ document.addEventListener('visibilitychange', () => { if(document.hidden && g &&
 function syncLaserUI(){
   document.querySelectorAll('.laserbtn').forEach(b => b.classList.toggle('on', laser));
   pad.classList.toggle('laser', laser);
-  $('hint').innerHTML = laser
+  $('hint').innerHTML = paused
+    ? 'PAUSED<br>Control was paused in the PointLoose window on the PC.'
+    : laser
     ? 'LASER MODE: swipe to move the dot<br>(clicks are off; keys and gestures still work)'
     : '1 finger: move &middot; tap: click &middot; 2-finger tap: right click<br>2-finger drag: scroll &middot; pinch: zoom &middot; 3 fingers: gestures<br>double-tap + hold: drag';
 }
@@ -687,9 +707,12 @@ $('lsize').value = cfg.lsize; syncSwatches(); syncLaserUI();
 """
 
 
+PAGE_BYTES = PAGE.replace("__VERSION__", VERSION).encode("utf-8")
+
+
 # ---------- Server ----------
 def token_path():
-    return os.path.join(os.path.expanduser("~"), ".pointloose_clone_token")
+    return os.path.join(os.path.expanduser("~"), ".pointloose_token")
 
 
 def save_token(tok):
@@ -707,11 +730,11 @@ def load_token():
         try:
             with open(token_path()) as f:
                 tok = f.read().strip()
-            if len(tok) >= 8:
+            if len(tok) >= 20:                 # older, shorter tokens are replaced
                 return tok
         except OSError:
             pass
-    tok = secrets.token_urlsafe(8)
+    tok = secrets.token_urlsafe(TOKEN_BYTES)
     save_token(tok)
     return tok
 
@@ -722,7 +745,7 @@ TOKEN = load_token()
 def rotate_token():
     """New secret link (used by the GUI's 'New link' button)."""
     global TOKEN
-    TOKEN = secrets.token_urlsafe(8)
+    TOKEN = secrets.token_urlsafe(TOKEN_BYTES)
     save_token(TOKEN)
     return TOKEN
 
@@ -730,6 +753,39 @@ def rotate_token():
 # Number of phones currently connected (the GUI shows this).
 active_clients = 0
 _clients_lock = threading.Lock()
+
+# "Pause control" in the GUI: while True every input command from any phone is ignored.
+paused = False
+
+
+class AuthLimiter:
+    """Blocks an address for a while after too many wrong links (stops token guessing)."""
+
+    def __init__(self):
+        self._fails = {}               # ip -> times of recent failures
+        self._blocked = {}             # ip -> unblock time
+        self._lock = threading.Lock()
+
+    def blocked(self, ip):
+        with self._lock:
+            until = self._blocked.get(ip)
+            if until and time.monotonic() < until:
+                return True
+            self._blocked.pop(ip, None)
+            return False
+
+    def fail(self, ip):
+        now = time.monotonic()
+        with self._lock:
+            recent = [t for t in self._fails.get(ip, []) if now - t < BAD_AUTH_WINDOW]
+            recent.append(now)
+            if len(recent) >= BAD_AUTH_LIMIT:
+                self._blocked[ip] = now + BAD_AUTH_BLOCK
+                recent = []
+            self._fails[ip] = recent
+
+
+auth_limiter = AuthLimiter()
 
 
 def finite(s, limit):
@@ -756,21 +812,34 @@ class Handler(BaseHTTPRequestHandler):
         supplied = parse_qs(urlparse(self.path).query).get("t", [""])[0]
         return hmac.compare_digest(supplied.encode(), TOKEN.encode())
 
+    def _security_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Content-Security-Policy",
+                         "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+                         "connect-src 'self' ws: wss:; frame-ancestors 'none'")
+
     def _send(self, code, body=b"", ctype="text/plain"):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self._security_headers()
         self.end_headers()
         if body:
             self.wfile.write(body)
 
     def do_GET(self):
         path = urlparse(self.path).path
+        ip = self.client_address[0]
+        if auth_limiter.blocked(ip):
+            return self._send(429, b"Too many wrong links. Try again in a few minutes.")
         if not self._authed():
+            auth_limiter.fail(ip)
             return self._send(403, b"Forbidden")
         if path == "/":
-            return self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
+            return self._send(200, PAGE_BYTES, "text/html; charset=utf-8")
         if path == "/ws":
             return self._websocket()
         self._send(404, b"Not found")
@@ -825,6 +894,7 @@ class Handler(BaseHTTPRequestHandler):
         self.connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self.connection.settimeout(IDLE_TIMEOUT)
         self.left_down = False
+        self.token = TOKEN                          # dropped when the GUI makes a new link
         global active_clients
         with _clients_lock:
             active_clients += 1
@@ -832,6 +902,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             while True:
                 fin, op, payload = self._read_frame()
+                if self.token != TOKEN:             # link was replaced: disconnect
+                    break
                 if op == 0x8:                       # close
                     self._write_frame(0x8, payload[:2])
                     break
@@ -856,6 +928,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _dispatch(self, msg):
         cmd, _, rest = msg.partition(",")
+        if cmd == "p":                              # heartbeat: report the pause state
+            return self._write_frame(0x1, b"P,1" if paused else b"P,0")
+        if paused and cmd != "u":                   # paused: only allow releasing a held button
+            return
         try:
             if cmd == "m":
                 sx, sy = rest.split(",")
@@ -898,9 +974,17 @@ class Handler(BaseHTTPRequestHandler):
                 laser.color = rest
             elif cmd == "ls":
                 laser.size = int(max(6, min(30, finite(rest, 1000))))
-            # "p" (heartbeat) and unknown commands are ignored
+            # unknown commands are ignored
         except (ValueError, OSError):
             pass
+
+
+def set_paused(on):
+    """Pause or resume control from every phone (Wi-Fi and Bluetooth)."""
+    global paused
+    paused = bool(on)
+    if paused:
+        laser.set(False)
 
 
 def lan_ip():
@@ -927,7 +1011,7 @@ def main():
         sys.exit("Could not open a port (8765-8774 all busy).")
 
     url = "http://%s:%d/?t=%s" % (lan_ip(), port, TOKEN)
-    print("\n  PointLoose Plus (Wi-Fi) running. On your phone, same Wi-Fi, open:\n")
+    print("\n  PointLoose %s (Wi-Fi) running. On your phone, same Wi-Fi, open:\n" % VERSION)
     print("    %s\n" % url)
     try:  # optional QR code: pip install qrcode
         import qrcode

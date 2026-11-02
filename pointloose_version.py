@@ -1,0 +1,5 @@
+"""Single source of truth for the product name and version."""
+APP_NAME = "PointLoose"
+VERSION = "1.0.0"
+COPYRIGHT = "Copyright (c) 2026 The PointLoose Authors"
+DESCRIPTION = "Use your phone as a wireless trackpad, keyboard and presenter for your PC"

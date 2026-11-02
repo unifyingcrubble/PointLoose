@@ -68,6 +68,8 @@ class Session:
 
 def dispatch(msg, session):
     cmd, _, rest = msg.partition(",")
+    if core.paused and cmd != "u":             # paused in the GUI: only allow releasing a held button
+        return
     try:
         if cmd == "m":
             sx, sy = rest.split(",")
@@ -205,6 +207,7 @@ class BleReceiver:
             async with BleakClient(device, disconnected_callback=on_disconnect, timeout=15.0) as client:
                 self.status = "Checking pairing code..."
                 await client.start_notify(TX_UUID, on_data)
+                code = self.code
                 n1 = secrets.token_hex(8)
                 await self._write(client, "n,%s\n" % n1)
                 authed = False
@@ -213,12 +216,12 @@ class BleReceiver:
                         line = await asyncio.wait_for(lines.get(), timeout=IDLE_TIMEOUT)
                     except asyncio.TimeoutError:
                         break
-                    if line is None:
+                    if line is None or (authed and code != self.code):   # gone, or "New code" pressed
                         break
                     if not authed:
                         parts = line.split(",")
                         ok = (len(parts) == 3 and parts[0] == "a" and len(parts[2]) <= 64
-                              and hmac.compare_digest(parts[1], mac(self.code, "P" + n1)))
+                              and hmac.compare_digest(parts[1], mac(code, "P" + n1)))
                         if not ok:
                             self._bad[device.address] = time.time()
                             self.status = "Phone sent a wrong code. Check it in the iPhone app."
@@ -227,7 +230,7 @@ class BleReceiver:
                             except Exception:
                                 pass
                             break
-                        await self._write(client, "v,%s\n" % mac(self.code, "C" + parts[2]))
+                        await self._write(client, "v,%s\n" % mac(code, "C" + parts[2]))
                         authed = True
                         self.connected = True
                         self.status = "Phone connected (Bluetooth)"

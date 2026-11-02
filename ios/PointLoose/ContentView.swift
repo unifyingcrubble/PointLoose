@@ -261,6 +261,13 @@ struct SettingsSheet: View {
     @Binding var laserSize: Double
     @Environment(\.dismiss) private var dismiss
 
+    private var appVersion: String {
+        let info = Bundle.main.infoDictionary
+        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(version) (\(build))"
+    }
+
     private let laserColors: [(String, String)] = [
         ("Red", "#ff2020"), ("Green", "#20ff40"), ("Blue", "#3080ff"), ("Yellow", "#ffd400")
     ]
@@ -299,6 +306,20 @@ struct SettingsSheet: View {
                     Text("3-finger swipe: up Task view, down Show desktop, left/right switch desktop.")
                 }
                 .font(.footnote)
+                Section(header: Text("About"),
+                        footer: Text("Only control computers you own or are allowed to use. "
+                                     + "The Bluetooth link is not encrypted: don't type passwords through it.")) {
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text(appVersion).foregroundColor(.secondary)
+                    }
+                    Text("Privacy: PointLoose collects no data. Everything stays between your phone and your PC.")
+                        .font(.footnote)
+                    Text("Open source under the MIT License. Use is subject to the PointLoose License Agreement "
+                         + "(EULA.md in the PointLoose repository).")
+                        .font(.footnote)
+                }
             }
             .navigationTitle("Settings")
             .toolbar {

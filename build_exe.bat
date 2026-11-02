@@ -12,11 +12,13 @@ if errorlevel 1 (
 )
 
 echo Installing build tools...
-%PY% -m pip install --upgrade pip pyinstaller segno bleak
+%PY% -m pip install --upgrade pip -r requirements.txt
 if errorlevel 1 goto :fail
 
 echo Building PointLoose.exe ...
-%PY% -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --collect-submodules bleak --collect-submodules winrt --name PointLoose --icon pointloose.ico --add-data "pointloose.ico;." pointloose_app.py
+%PY% make_version_info.py
+if errorlevel 1 goto :fail
+%PY% -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --collect-submodules bleak --collect-submodules winrt --name PointLoose --icon pointloose.ico --version-file version_info.txt --add-data "pointloose.ico;." --add-data "README.md;." --add-data "EULA.md;." --add-data "PRIVACY.md;." --add-data "SECURITY.md;." --add-data "LICENSE;." --add-data "THIRD_PARTY_NOTICES.md;." pointloose_app.py
 if errorlevel 1 goto :fail
 
 echo.

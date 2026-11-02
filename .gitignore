@@ -7,3 +7,4 @@ dist/
 *.xcodeproj/
 ios/build/
 .DS_Store
+version_info.txt

@@ -1,0 +1,41 @@
+name: PointLoose
+options:
+  bundleIdPrefix: com.pointloose
+  deploymentTarget:
+    iOS: "15.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    PRODUCT_BUNDLE_IDENTIFIER: com.pointloose.trackpad
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+targets:
+  PointLoose:
+    type: application
+    platform: iOS
+    sources:
+      - PointLoose
+    info:
+      path: PointLoose/Info.plist
+      properties:
+        CFBundleDisplayName: PointLoose
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchScreen: {}
+        UIRequiresFullScreen: true
+        NSBluetoothAlwaysUsageDescription: "PointLoose uses Bluetooth to send your trackpad touches to your PC."
+        NSBluetoothPeripheralUsageDescription: "PointLoose uses Bluetooth to send your trackpad touches to your PC."
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: NO

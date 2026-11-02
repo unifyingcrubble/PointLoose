@@ -1,0 +1,36 @@
+name: Build PointLoose.exe
+
+on:
+  workflow_dispatch:        # run it from the Actions tab
+  push:
+    tags: ["v*"]            # or push a tag like v1.0 to also publish a Release
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find project folder
+        shell: bash
+        run: |
+          f=$(find . -name pointloose_app.py -not -path './.git/*' | head -1)
+          if [ -z "$f" ]; then echo "pointloose_app.py not found in repo"; find . -not -path './.git/*' | head -50; exit 1; fi
+          echo "APP_DIR=$(dirname "$f")" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip pyinstaller segno bleak
+      - working-directory: ${{ env.APP_DIR }}
+        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --collect-submodules bleak --collect-submodules winrt --name PointLoose --icon pointloose.ico --add-data "pointloose.ico;." pointloose_app.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PointLoose-windows
+          path: ${{ env.APP_DIR }}/dist/PointLoose.exe
+      - name: Attach to Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.APP_DIR }}/dist/PointLoose.exe

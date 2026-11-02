@@ -1,9 +1,7 @@
 name: Build PointLoose.ipa
 
 on:
-  workflow_dispatch:        # run it from the Actions tab
-  push:
-    tags: ["ios-v*"]        # or push a tag like ios-v1.0
+  workflow_dispatch:        # test build from the Actions tab; releases come from release.yml
 
 permissions:
   contents: write
@@ -56,10 +54,3 @@ jobs:
         with:
           path: ${{ env.IOS_DIR }}/PointLoose.ipa
           archive: false
-
-      - name: Attach to Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || format('ios-build-{0}', github.run_number) }}
-          name: PointLoose iOS ${{ github.run_number }}
-          files: ${{ env.IOS_DIR }}/PointLoose.ipa

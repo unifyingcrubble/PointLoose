@@ -86,8 +86,8 @@ Error details are written to `%APPDATA%\PointLoose\pointloose.log`.
 **Run without building:** `pip install -r requirements.txt` then `python pointloose_app.py`.
 
 **GitHub Actions:**
-- *Build PointLoose.exe* runs from the Actions tab; pushing a tag like `v1.0.0` also publishes a Release.
-- *Build PointLoose.ipa* builds the unsigned iPhone app; tag `ios-v1.0.0` to release it.
+- **Release:** push a tag like `v1.0.0` to build `PointLoose.exe` and `PointLoose.ipa` and publish both on one Release (notes come from `CHANGELOG.md`).
+- *Build PointLoose.exe* / *Build PointLoose.ipa*: test builds from the Actions tab (downloadable artifacts, no Release).
 
 ### Project layout
 

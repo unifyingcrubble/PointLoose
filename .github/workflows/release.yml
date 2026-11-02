@@ -1,0 +1,85 @@
+name: Release
+
+# Push a tag like v1.0.0 (or run it from the Actions tab with a tag name) to build
+# PointLoose.exe and PointLoose.ipa and publish both on one GitHub Release.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (for example v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build PointLoose.exe
+        run: |
+          python -m pip install --upgrade pip -r requirements.txt
+          python make_version_info.py
+          python -m PyInstaller --noconfirm --clean --onefile --windowed --noupx --collect-submodules bleak --collect-submodules winrt --name PointLoose --icon pointloose.ico --version-file version_info.txt --add-data "pointloose.ico;." --add-data "README.md;." --add-data "EULA.md;." --add-data "PRIVACY.md;." --add-data "SECURITY.md;." --add-data "LICENSE;." --add-data "THIRD_PARTY_NOTICES.md;." pointloose_app.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: exe
+          path: dist/PointLoose.exe
+
+  ios:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build PointLoose.ipa (unsigned)
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+          xcodebuild -project PointLoose.xcodeproj -scheme PointLoose -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+          mkdir Payload
+          cp -R build/Build/Products/Release-iphoneos/PointLoose.app Payload/
+          zip -qry PointLoose.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ipa
+          path: ios/PointLoose.ipa
+
+  publish:
+    needs: [windows, ios]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+          merge-multiple: true
+      - name: Release notes from CHANGELOG.md
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          ver="${tag#v}"
+          awk -v v="$ver" '$0 ~ "^## \\[" v "\\]" {on=1; next} /^## \[/ {on=0} on' CHANGELOG.md > notes.md
+          cat >> notes.md <<'EOF'
+
+          ## Downloads
+          - **PointLoose.exe**: Windows 10/11. Double-click to run (if SmartScreen appears: More info > Run anyway).
+          - **PointLoose.ipa**: iPhone app (unsigned). Install with a sideloading tool such as AltStore or Sideloadly.
+
+          By downloading you agree to the [License Agreement](${{ github.server_url }}/${{ github.repository }}/blob/main/EULA.md). See also the [Privacy Policy](${{ github.server_url }}/${{ github.repository }}/blob/main/PRIVACY.md).
+          EOF
+          echo "TAG=$tag" >> "$GITHUB_ENV"
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: PointLoose ${{ env.TAG }}
+          body_path: notes.md
+          files: |
+            out/PointLoose.exe
+            out/PointLoose.ipa
